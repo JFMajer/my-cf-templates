@@ -3,8 +3,6 @@ Parameters:
     Description: An environment name that will be prefixed to resource names
     Type: AWS::SSM::Parameter::Value<String>
     Default: environment
-    AllowedPattern: "[a-zA-Z0-9]{1,10}"
-    ConstraintDescription: must be from 1 to 10 characters, and contain only alphanumeric characters.
 
   VPCName:
     Description: Name of the VPC
@@ -12,6 +10,14 @@ Parameters:
     Default: MyVPC
     AllowedPattern: ^[a-zA-Z0-9]*$
     ConstraintDescription: must be alphanumeric.
+
+  ImageId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+
+  InstanceType:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /bastion/instanceType
   
 Mappings:
   SubnetConfig:
@@ -318,6 +324,148 @@ Resources:
       SubnetId: !Ref PrivateSubnet2
       RouteTableId: !Ref PrivateRouteTable2
 
+  BastionSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow outbound traffic on port 443
+      VpcId: !Ref VPC
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub '${VPCName}-${EnvironmentName}-bastion-sg'
+        - Key: ManagedBy
+          Value: CloudFormation
+    
+  SSMEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow inbound traffic on port 443 from SSM
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !FindInMap [ SubnetConfig, VPC, CIDR ]
+      Tags:
+        - Key: Name
+          Value: !Sub '${VPCName}-${EnvironmentName}-ssm-endpoint-sg'
+        - Key: ManagedBy
+          Value: CloudFormation  
+
+  SSMEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ssm
+      VpcId: !Ref VPC
+      SubnetIds:
+        - !Ref PrivateSubnet0
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref SSMEndpointSecurityGroup
+      PrivateDnsEnabled: true
+      VpcEndpointType: Interface
+
+  SSMEdnpointEC2Messages:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ec2messages
+      VpcId: !Ref VPC
+      SubnetIds:
+        - !Ref PrivateSubnet0
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref SSMEndpointSecurityGroup
+      PrivateDnsEnabled: true
+      VpcEndpointType: Interface
+
+  SSMEndpointSSMMessages:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ssmmessages
+      VpcId: !Ref VPC
+      SubnetIds:
+        - !Ref PrivateSubnet0
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref SSMEndpointSecurityGroup
+      PrivateDnsEnabled: true
+      VpcEndpointType: Interface
+
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: BastionEC2Role
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Tags:
+        - Key: Name
+          Value: !Sub '${VPCName}-${EnvironmentName}-ec2-role'
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  BastionInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: BastionInstanceProfile
+      Roles:
+        - !Ref EC2Role
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        IamInstanceProfile:
+          Arn: !GetAtt
+            - BastionInstanceProfile
+            - Arn
+        ImageId: !Ref ImageId
+        InstanceType: !Ref InstanceType
+        SecurityGroupIds: 
+          - !Ref BastionSecurityGroup
+  
+  BastionASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      MinSize: 1
+      MaxSize: 1
+      DesiredCapacity: 1
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnet0
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      Tags:
+        - Key: Name
+          Value: !Sub '${VPCName}-${EnvironmentName}-bastion'
+          PropagateAtLaunch: true
+        - Key: ManagedBy
+          Value: CloudFormation
+          PropagateAtLaunch: true
+        - Key: Purpose
+          Value: Bastion
+          PropagateAtLaunch: false
+      TerminationPolicies:
+        - OldestInstance
+
 Outputs:
   VpcId:
     Description: VPC ID
@@ -366,3 +514,10 @@ Outputs:
     Value: !GetAtt VPC.DefaultSecurityGroup
     Export:
       Name: !Sub '${VPCName}-${EnvironmentName}-default-sg-id'
+
+  PrivateSubnetIds:
+    Description: Comma-separated list of private subnet IDs
+    Value: !Join [ ",", [ !Ref PrivateSubnet0, !Ref PrivateSubnet1, !Ref PrivateSubnet2 ] ]
+    Export:
+      Name: PrivateSubnetIds
+  

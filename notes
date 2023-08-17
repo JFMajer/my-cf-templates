@@ -1,0 +1,8 @@
+aws cloudformation create-stack --stack-name <stack-name> --template-body file://<template-file> --region eu-north-1 --profile <profile>
+aws cloudformation create-stack --stack-name <stack-name> --template-body file://<template-file> --parameters ParameterKey=<param-name>,ParameterValue=<param-value>
+
+aws cloudformation update-stack --stack-name <stack-name> --template-body file://<template-file> --region eu-north-1 --profile <profile>
+
+aws cloudformation describe-stacks --stack-name <stack-name>
+
+aws cloudformation delete-stack --stack-name <stack-name>

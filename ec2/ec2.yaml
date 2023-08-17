@@ -1,0 +1,33 @@
+Parameters:
+  SecurityGroupPort:
+    Description: Port to open on the security group
+    Type: Number
+    MinValue: 1150
+    MaxValue: 65535
+
+  InstanceType:
+    Description: EC2 instance type
+    Type: String
+    Default: t3.micro
+    AllowedValues:
+      - t3.micro
+      - t3.small
+      - t3.nano
+      - t3.medium
+    ConstraintDescription: must be a valid EC2 instance type.
+
+  SecurityGroupIngressCIDR:
+    Description: CIDR to open on the security group
+    Type: String
+    MinLength: '9'
+    MaxLength: '18'
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})
+    ConstraintDescription: must be a valid CIDR range of the form x.x.x.x/x.
+  
+  MyVPC:
+    Description: VPC to deploy into
+    Type: AWS::EC2::VPC::Id
+
+  MySubnet:
+    Description: Subnet to deploy into
+    Type: AWS::EC2::Subnet::Id

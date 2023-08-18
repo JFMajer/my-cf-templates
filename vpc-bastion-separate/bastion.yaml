@@ -49,13 +49,20 @@ Resources:
     Properties:
       LaunchTemplateData:
         IamInstanceProfile:
-          Arn: !GetAtt
-            - BastionInstanceProfile
-            - Arn
+          Arn: !GetAtt BastionInstanceProfile.Arn
         ImageId: !Ref ImageId
         InstanceType: !Ref InstanceType
         SecurityGroupIds: 
           - !ImportValue BastionSG
+        UserData: 
+          Fn::Base64: |
+            #!/bin/bash
+            yum update -y
+            yum install -y git
+            yum install -y jq
+            yum install -y unzip
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip awscliv2.zip && ./aws/install
 
   BastionASG:
     Type: AWS::AutoScaling::AutoScalingGroup

@@ -1,0 +1,84 @@
+Parameters:
+
+  EnvironmentName:
+    Description: An environment name that will be prefixed to resource names
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: environment
+
+  ImageId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+
+  InstanceType:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /bastion/instanceType
+
+
+Resources:
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: BastionEC2Role
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-ec2-role'
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  BastionInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: BastionInstanceProfile
+      Roles:
+        - !Ref EC2Role
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        IamInstanceProfile:
+          Arn: !GetAtt
+            - BastionInstanceProfile
+            - Arn
+        ImageId: !Ref ImageId
+        InstanceType: !Ref InstanceType
+        SecurityGroupIds: 
+          - !ImportValue BastionSG
+
+  BastionASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      MinSize: 1
+      MaxSize: 1
+      DesiredCapacity: 1
+      VPCZoneIdentifier:
+        - !ImportValue PrivateSubnet0
+        - !ImportValue PrivateSubnet1
+        - !ImportValue PrivateSubnet2
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentName}-bastion'
+          PropagateAtLaunch: true
+        - Key: ManagedBy
+          Value: CloudFormation
+          PropagateAtLaunch: true
+        - Key: Purpose
+          Value: Bastion
+          PropagateAtLaunch: false
+      TerminationPolicies:
+        - OldestInstance

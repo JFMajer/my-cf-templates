@@ -6,3 +6,8 @@ aws cloudformation update-stack --stack-name <stack-name> --template-body file:/
 aws cloudformation describe-stacks --stack-name <stack-name>
 
 aws cloudformation delete-stack --stack-name <stack-name>
+
+aws cloudformation detect-stack-drift --stack-name vpc --region eu-north-1 --profile adm
+
+aws cloudformation create-change-set --stack-name vpc --change-set-name AddMissingSubnet --template-body file://vpc-bastion-separate/vpc.yaml --profile adm
+aws cloudformation execute-change-set --stack-name vpc --change-set-name AddMissingSubnet --template-body file://vpc-bastion-separate/vpc.yaml --profile adm
